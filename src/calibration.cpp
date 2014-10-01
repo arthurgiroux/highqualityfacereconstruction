@@ -4,13 +4,17 @@
 
 using namespace cv;
 
+
+#define MEAN_DEVIATION_DISTANCE_THRESH 1.10
+
+// structure that represents a fiducial
 struct MarkerPair
 {
-    int first_index;
+    int first_index; 
     int second_index;
-    Point2f   first;
+    Point2f   first; // coordinate of the center of one of the marker
     Point2f   second;
-    float         distance;
+    float         distance; // distance between the two center of the marker
 
     MarkerPair(int first_index_, int second_index_, Point2f first_, Point2f second_, float distance_): first_index(first_index_), second_index(second_index_), first(first_), second(second_), distance(distance_) {}
 
@@ -25,6 +29,7 @@ double distanceBetweenPoints(Point2f p1, Point2f p2) {
     // sqrt((x1 - x2)^2 + (y1 - y2)^2)
     return sqrt((p1.x-p2.x)*(p1.x-p2.x) + (p1.y - p2.y)*(p1.y - p2.y));
 }
+
 
 int main(int argc, char** argv)
 {
@@ -66,32 +71,25 @@ int main(int argc, char** argv)
     std::vector<Point2f> corners;
 
  
+    // retrieve all the points
     goodFeaturesToTrack(reddot, corners, 500, 0.01, 10);
-    std::cout << corners.size() << std::endl;
-
-    for (size_t idx = 0; idx < corners.size(); idx++) {
-            circle(image, corners.at(idx), 3,255, -1);
-            std::cout << corners.at(idx) << std::endl;
-    }
 
     /// Set the neeed parameters to find the refined corners
     Size winSize = Size(5, 5);
     Size zeroZone = Size(-1, -1);
     TermCriteria criteria = TermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 40, 0.001);
 
+    // Refine the point center in subpixel accuracy
     cornerSubPix(src_gray, corners, winSize, zeroZone, criteria);
 
     for (size_t idx = 0; idx < corners.size(); idx++) {
-            circle(src_gray, corners.at(idx), 3, 255, -1);
+            circle(image, corners.at(idx), 3, 255, -1);
             std::cout << corners.at(idx) << std::endl;
     }
 
-    /// Show your results
-    namedWindow( "Hough Circle Transform Demo", CV_WINDOW_AUTOSIZE );
-    imshow( "Hough Circle Transform Demo", image );
+    imshow("Refined corners", image);
 
-    imshow( "New corners", src_gray);
-
+    // Let's match the points together
     std::vector<Point2f> circles = corners;
 
     std::pair<Point2f, Point2f> circle_pair;
@@ -99,10 +97,8 @@ int main(int argc, char** argv)
     std::vector<MarkerPair> pairs;
 
     for (size_t i = 0; i < circles.size(); i++) {
-        // find the closest point for a given point
 
-        Point2f best_match;
-
+        // For all pairs of markers compute the distance between them
         for (size_t j = 0; j < circles.size(); j++) {
 
             if (j == i) {
@@ -114,28 +110,17 @@ int main(int argc, char** argv)
             pairs.push_back(MarkerPair(i, j, circles[i], circles[j], current_dist));
         }
 
-        // if (min_dist != -1) {
-        //     // Computing ROI between the two matches
-        //     std::ostringstream oss;
-        //     oss << "window " << i;
-
-        //     Mat roi = src_gray(Rect(min(circles[i].x, best_match.x), min(circles[i].y, best_match.y), max(circles[i].x, best_match.x) - min(circles[i].x, best_match.x), max(circles[i].y, best_match.y) - min(circles[i].y, best_match.y)));
-
-        //     vector<Vec2f> lines;
-
-        // }
-
-
-        //std::cout << "best match is " << best_match << " with min dist " << min_dist << std::endl;
     }
 
-    // sort by distance
+    // sort by ascending distance
     std::sort(pairs.begin(), pairs.end());
 
     float mean_distance = 0;
 
+    // Set of markers already taken
     std::set<int> treated;
 
+    // Good pairs
     std::vector<MarkerPair> good_pairs;
     int nbr_good_pairs = 0;
 
@@ -144,9 +129,12 @@ int main(int argc, char** argv)
     for (std::vector<MarkerPair>::iterator i = pairs.begin(); i != pairs.end(); i++)  {
         std::cout << i->distance << std::endl;
 
+        // if we didn't take the markers already then we treat it
         if (!treated.count(i->first_index) && !treated.count(i->second_index)) {
 
-            if (mean_distance == 0 || i->distance <= mean_distance*1.10) {
+            // We only take the pair if it doesn't deviate too much from the
+            // mean of the distance between the markers that we already took
+            if (mean_distance == 0 || i->distance <= mean_distance * MEAN_DEVIATION_DISTANCE_THRESH) {
                 nbr_good_pairs++;
                 mean_distance = ((mean_distance * (nbr_good_pairs - 1)) + i->distance) / nbr_good_pairs;
                 treated.insert(i->first_index);
