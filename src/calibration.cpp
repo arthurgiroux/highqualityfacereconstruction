@@ -24,6 +24,16 @@ struct MarkerPair
     }
 };
 
+// structure that represents a marker in the euclidian space
+struct MarkerEuclidian
+{
+    Point3f   first; // coordinate of the center of one of the marker
+    Point3f   second;
+
+    MarkerEuclidian(Point3f first_, Point3f second_): first(first_), second(second_) {}
+
+};
+
 // Compute the distance between two 2D points
 double distanceBetweenPoints(Point2f p1, Point2f p2) {
     // sqrt((x1 - x2)^2 + (y1 - y2)^2)
@@ -149,8 +159,57 @@ int main(int argc, char** argv)
         line(image, i->first, i->second, 255);
     }
 
-    imshow( "Good pairs", image );
+    imshow("Good pairs", image);
 
+
+
+
+    // Setting up the euclidian coordinate system with the origin at the center of the ball
+
+
+    // finding the center of the ball
+    vector<Vec3f> circles_ball;
+    HoughCircles(src_gray, circles_ball, CV_HOUGH_GRADIENT, 1, src_gray.rows/8, 200, 100, 0, 0);
+
+    if (circles_ball.size() == 0) {
+        std::cerr << "Could'nt find the ball, aborting" << std::endl;
+        exit(1);
+    }
+
+    Vec3f ballcenter = circles_ball[0];
+
+    Point center(cvRound(ballcenter[0]), cvRound(ballcenter[1]));
+    int radius = cvRound(ballcenter[2]);
+    // circle center
+    circle(image, center, 3, Scalar(0,255,0), -1, 8, 0);
+    // circle outline
+    circle(image, center, radius, Scalar(0,0,255), 3, 8, 0);
+
+
+    Point unit_y = center - Point(0, radius);
+
+    line(image, center, unit_y, 255);
+
+    imshow("centers", image);
+
+    std::vector<MarkerEuclidian> markers_euclidians;
+
+    for (std::vector<MarkerPair>::iterator i = good_pairs.begin(); i != good_pairs.end(); i++) {
+        // We project into the euclidian space centered at the ball
+        // for x and y we just project into the vertical/horizontal axis
+        // that goes from the center of the ball to the radius
+
+        // For z we know that x^2 + y^2 + z^2 = r^2 where r^2 is the radius of the ball in pixel
+        // So z = sqrt(r^2 - x^2 - y^2)
+
+        std::cout << radius << std::endl;
+
+        Point3f first = Point3f(i->first.x - center.x, i->first.y - center.y, sqrt(abs(radius * radius - i->first.x * i->first.x - i->first.y * i->first.y)));
+        Point3f second = Point3f(i->second.x - center.x, i->second.y - center.y, sqrt(abs(radius * radius - i->second.x * i->second.x - i->second.y * i->second.y)));
+
+        std::cout << first << " " << second << std::endl;
+        markers_euclidians.push_back(MarkerEuclidian(first, second));
+    }
 
     waitKey(0);
 
