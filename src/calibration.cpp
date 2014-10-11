@@ -179,7 +179,7 @@ int main(int argc, char** argv)
     Vec3f ballcenter = circles_ball[0];
 
     Point center(cvRound(ballcenter[0]), cvRound(ballcenter[1]));
-    int radius = cvRound(ballcenter[2]);
+    float radius = cvRound(ballcenter[2]);
     // circle center
     circle(image, center, 3, Scalar(0,255,0), -1, 8, 0);
     // circle outline
@@ -194,6 +194,8 @@ int main(int argc, char** argv)
 
     std::vector<MarkerEuclidian> markers_euclidians;
 
+    std::cout << " radius " << radius << std::endl;
+
     for (std::vector<MarkerPair>::iterator i = good_pairs.begin(); i != good_pairs.end(); i++) {
         // We project into the euclidian space centered at the ball
         // for x and y we just project into the vertical/horizontal axis
@@ -202,12 +204,17 @@ int main(int argc, char** argv)
         // For z we know that x^2 + y^2 + z^2 = r^2 where r^2 is the radius of the ball in pixel
         // So z = sqrt(r^2 - x^2 - y^2)
 
-        std::cout << radius << std::endl;
+        float first_x = i->first.x - center.x;
+        float first_y = i->first.y - center.y;
 
-        Point3f first = Point3f(i->first.x - center.x, i->first.y - center.y, sqrt(abs(radius * radius - i->first.x * i->first.x - i->first.y * i->first.y)));
-        Point3f second = Point3f(i->second.x - center.x, i->second.y - center.y, sqrt(abs(radius * radius - i->second.x * i->second.x - i->second.y * i->second.y)));
+        float second_x = i->second.x - center.x;
+        float second_y = i->second.y - center.y;
+                Point3f first = Point3f(first_x, first_y, sqrt(abs(radius * radius - first_x * first_x - first_y * first_y)));
+        Point3f second = Point3f(second_x, second_y, sqrt(abs(radius * radius - second_x * second_x - second_y * second_y)));
 
-        std::cout << first << " " << second << std::endl;
+        //std::cout << first << " " << second << std::endl;
+       // std::cout << "plot3([" << first.x << ", " << first.y << ", " << first.z << ", '.')" << std::endl;
+        std::cout << "plot3([" << first.x << " , " << second.x << "], [" << second.y << ", " << first.y << "], [" << second.z << ", " << first.z << "])" << std::endl;
         markers_euclidians.push_back(MarkerEuclidian(first, second));
     }
 
