@@ -209,12 +209,13 @@ int main(int argc, char** argv)
 
         float second_x = i->second.x - center.x;
         float second_y = i->second.y - center.y;
-                Point3f first = Point3f(first_x, first_y, sqrt(abs(radius * radius - first_x * first_x - first_y * first_y)));
-        Point3f second = Point3f(second_x, second_y, sqrt(abs(radius * radius - second_x * second_x - second_y * second_y)));
+        Point3f first = Point3f(first_x, first_y, -sqrt(abs(radius * radius - first_x * first_x - first_y * first_y)));
+        Point3f second = Point3f(second_x, second_y, -sqrt(abs(radius * radius - second_x * second_x - second_y * second_y)));
 
         //std::cout << first << " " << second << std::endl;
        // std::cout << "plot3([" << first.x << ", " << first.y << ", " << first.z << ", '.')" << std::endl;
-        std::cout << "plot3([" << first.x << " , " << second.x << "], [" << second.y << ", " << first.y << "], [" << second.z << ", " << first.z << "])" << std::endl;
+
+        std::cout << "plot3([" << first.x << " , " << second.x << "], [" << first.y << ", " << second.y << "], [" << first.z << ", " << second.z << "])" << std::endl;
         markers_euclidians.push_back(MarkerEuclidian(first, second));
     }
 
