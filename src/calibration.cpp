@@ -1,11 +1,13 @@
 #include <cstdio>
 #include <cmath>
 #include <opencv2/opencv.hpp>
+#include <Eigen/Geometry> 
+
 
 using namespace cv;
 
 
-#define MEAN_DEVIATION_DISTANCE_THRESH 1.10
+#define MEAN_DEVIATION_DISTANCE_THRESH 1.30
 
 // structure that represents a fiducial
 struct MarkerPair
@@ -40,67 +42,7 @@ double distanceBetweenPoints(Point2f p1, Point2f p2) {
     return sqrt((p1.x-p2.x)*(p1.x-p2.x) + (p1.y - p2.y)*(p1.y - p2.y));
 }
 
-
-int main(int argc, char** argv)
-{
-    if (argc != 2)
-    {
-        printf("usage: calibration <image>\n");
-        return -1;
-    }
-
-
-    // Load the image
-    Mat image;
-    image = imread(argv[1], 1);
-
-    if (!image.data)
-    {
-        printf("No image data \n");
-        return -1;
-    }
-
-
-    resize(image, image, Size(), 0.1, 0.1);
-
-    // Go into HSV space
-    Mat hsv;
-    cvtColor(image, hsv, CV_BGR2HSV);
-
-    Mat reddot;
-    // select red
-    inRange(hsv, Scalar(0, 90, 90), Scalar(7, 255, 255), reddot);
-    imshow("original", image);
-    imshow("HSV", hsv);
-    imshow("Red dot", reddot);
-
-
-    Mat src_gray;
-    cvtColor(image, src_gray, CV_BGR2GRAY);
-
-    std::vector<Point2f> corners;
-
- 
-    // retrieve all the points
-    goodFeaturesToTrack(reddot, corners, 500, 0.01, 10);
-
-    /// Set the neeed parameters to find the refined corners
-    Size winSize = Size(5, 5);
-    Size zeroZone = Size(-1, -1);
-    TermCriteria criteria = TermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 40, 0.001);
-
-    // Refine the point center in subpixel accuracy
-    cornerSubPix(src_gray, corners, winSize, zeroZone, criteria);
-
-    for (size_t idx = 0; idx < corners.size(); idx++) {
-            circle(image, corners.at(idx), 3, 255, -1);
-            std::cout << corners.at(idx) << std::endl;
-    }
-
-    imshow("Refined corners", image);
-
-    // Let's match the points together
-    std::vector<Point2f> circles = corners;
+std::vector<MarkerPair> matchPoints(std::vector<Point2f> circles) {
 
     std::pair<Point2f, Point2f> circle_pair;
 
@@ -126,7 +68,6 @@ int main(int argc, char** argv)
     std::sort(pairs.begin(), pairs.end());
 
     float mean_distance = 0;
-
     // Set of markers already taken
     std::set<int> treated;
 
@@ -151,47 +92,21 @@ int main(int argc, char** argv)
                 treated.insert(i->second_index);
                 good_pairs.push_back(*i);
             }
+            else {
+                std::cout << "too much deviation " << i->distance << " " << mean_distance << " " << mean_distance* MEAN_DEVIATION_DISTANCE_THRESH << std::endl;
+            }
         }
     }
 
     for (std::vector<MarkerPair>::iterator i = good_pairs.begin(); i != good_pairs.end(); i++) {
         std::cout << "good pair " << std::endl;
-        line(image, i->first, i->second, 255);
     }
 
-    imshow("Good pairs", image);
+    return good_pairs;
+}
 
 
-
-
-    // Setting up the euclidian coordinate system with the origin at the center of the ball
-
-
-    // finding the center of the ball
-    vector<Vec3f> circles_ball;
-    HoughCircles(src_gray, circles_ball, CV_HOUGH_GRADIENT, 1, src_gray.rows/8, 200, 100, 0, 0);
-
-    if (circles_ball.size() == 0) {
-        std::cerr << "Could'nt find the ball, aborting" << std::endl;
-        exit(1);
-    }
-
-    Vec3f ballcenter = circles_ball[0];
-
-    Point center(cvRound(ballcenter[0]), cvRound(ballcenter[1]));
-    float radius = cvRound(ballcenter[2]);
-    // circle center
-    circle(image, center, 3, Scalar(0,255,0), -1, 8, 0);
-    // circle outline
-    circle(image, center, radius, Scalar(0,0,255), 3, 8, 0);
-
-
-    Point unit_y = center - Point(0, radius);
-
-    line(image, center, unit_y, 255);
-
-    imshow("centers", image);
-
+std::vector<MarkerEuclidian> euclidianProject(std::vector<MarkerPair> good_pairs, Point center, float radius) {
     std::vector<MarkerEuclidian> markers_euclidians;
 
     std::cout << " radius " << radius << std::endl;
@@ -218,6 +133,159 @@ int main(int argc, char** argv)
         std::cout << "plot3([" << first.x << " , " << second.x << "], [" << first.y << ", " << second.y << "], [" << first.z << ", " << second.z << "])" << std::endl;
         markers_euclidians.push_back(MarkerEuclidian(first, second));
     }
+
+    return markers_euclidians;
+}
+
+
+// RANSAC 
+
+std::vector<MarkerEuclidian> RANSACCorespondances(std::vector<MarkerEuclidian> first_markers, std::vector<MarkerEuclidian> second_markers) {
+
+    // Let's take a point from the first markers
+
+    float min_error = INFINITY;
+
+    std::vector<MarkerEuclidian> correspondances;
+
+    for (std::vector<MarkerEuclidian>::iterator i = first_markers.begin(); i != first_markers.end(); i++) {
+
+        for (std::vector<MarkerEuclidian>::iterator j = second_markers.begin(); j != second_markers.end(); j++) {
+
+            Eigen::Vector3d a1(0, 0, 0);
+            Eigen::Vector3d a2(i->first.x, i->first.y, i->first.z);
+            Eigen::Vector3d a3(i->second.x, i->second.y, i->second.z);
+                    
+            Eigen::Vector3d b1(0, 0, 0);
+            Eigen::Vector3d b2(j->first.x, j->first.y, j->first.z);
+            Eigen::Vector3d b3(j->second.x, j->second.y, j->second.z);
+
+            Eigen::Matrix<double, 3, 3> start, end;
+            start.col(0) = a1;
+            start.col(1) = a2;
+            start.col(2) = a3;
+
+            end.col(0) = b1;
+            end.col(1) = b2;
+            end.col(2) = b3;
+
+            std::cout << Eigen::umeyama(start,end) << std::endl;
+        }
+    }
+
+    return correspondances;
+}
+
+
+
+std::vector<MarkerEuclidian> treatImage(char* file) {
+        // Load the image
+    Mat image;
+    image = imread(file, 1);
+
+    if (!image.data)
+    {
+        printf("No image data \n");
+        return std::vector<MarkerEuclidian>();
+    }
+
+
+    resize(image, image, Size(), 0.1, 0.1);
+
+    // Go into HSV space
+    Mat hsv;
+    cvtColor(image, hsv, CV_BGR2HSV);
+
+    Mat reddot;
+    // select red
+    inRange(hsv, Scalar(0, 90, 90), Scalar(7, 255, 255), reddot);
+    //imshow("original", image);
+    //imshow("HSV", hsv);
+    //imshow("Red dot", reddot);
+
+
+    Mat src_gray;
+    cvtColor(image, src_gray, CV_BGR2GRAY);
+
+    std::vector<Point2f> corners;
+
+ 
+    // retrieve all the points
+    goodFeaturesToTrack(reddot, corners, 500, 0.01, 10);
+
+    /// Set the neeed parameters to find the refined corners
+    Size winSize = Size(5, 5);
+    Size zeroZone = Size(-1, -1);
+    TermCriteria criteria = TermCriteria(CV_TERMCRIT_EPS + CV_TERMCRIT_ITER, 40, 0.001);
+
+    // Refine the point center in subpixel accuracy
+    cornerSubPix(src_gray, corners, winSize, zeroZone, criteria);
+
+    for (size_t idx = 0; idx < corners.size(); idx++) {
+            circle(image, corners.at(idx), 3, 255, -1);
+            std::cout << corners.at(idx) << std::endl;
+    }
+
+
+    // Let's match the points together
+    std::vector<MarkerPair> good_pairs = matchPoints(corners);
+
+
+    for (size_t idx = 0; idx < good_pairs.size(); idx++) {
+        line(image, good_pairs.at(idx).first, good_pairs.at(idx).second, 255);
+    }
+
+    imshow("blabla", image);
+    // Setting up the euclidian coordinate system with the origin at the center of the ball
+
+
+    // finding the center of the ball
+    vector<Vec3f> circles_ball;
+    HoughCircles(src_gray, circles_ball, CV_HOUGH_GRADIENT, 1, src_gray.rows/8, 200, 100, 0, 0);
+
+    if (circles_ball.size() == 0) {
+        std::cerr << "Could'nt find the ball, aborting" << std::endl;
+        exit(1);
+    }
+
+    Vec3f ballcenter = circles_ball[0];
+
+    Point center(cvRound(ballcenter[0]), cvRound(ballcenter[1]));
+    float radius = cvRound(ballcenter[2]);
+    // circle center
+    circle(image, center, 3, Scalar(0,255,0), -1, 8, 0);
+    // circle outline
+    circle(image, center, radius, Scalar(0,0,255), 3, 8, 0);
+
+
+    Point unit_y = center - Point(0, radius);
+
+    line(image, center, unit_y, 255);
+
+    std::vector<MarkerEuclidian> markers_euclidians = euclidianProject(good_pairs, center, radius);
+
+
+    imshow("centers", image);
+
+    return markers_euclidians;
+
+}
+
+
+int main(int argc, char** argv)
+{
+    if (argc < 2)
+    {
+        printf("usage: calibration <image>\n");
+        return -1;
+    }
+
+    std::vector<MarkerEuclidian> firstview = treatImage(argv[1]);
+    std::vector<MarkerEuclidian> secondview = treatImage(argv[2]);
+
+    RANSACCorespondances(firstview, secondview);
+
+
 
     waitKey(0);
 
