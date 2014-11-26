@@ -11,9 +11,12 @@ using namespace cv;
 
 int ransac_id = 1;
 int red_threshold = 90;
-int circle_resolution = 5;
-int min_radius = 0;
+int red_threshold_up = 50;
+int circle_resolution = 1;
+int min_radius = 100;
 int max_radius = 0;
+
+
 
 int MEAN_DEVIATION_DISTANCE_THRESH = 13;
 #define MAX_ERROR 50
@@ -221,13 +224,19 @@ std::vector<MarkerPair> euclidianProject(std::vector<MarkerPair> good_pairs, Poi
 
 // RANSAC 
 
-void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondances, int pass, std::vector<MarkerPair> &first_markers, std::vector<MarkerPair> &second_markers) {
+void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondances, int pass, std::vector<MarkerPair> &first_markers_, std::vector<MarkerPair> &second_markers_) {
 
     // Let's take a point from the first markers
 
     int max_matches = 0;
+    std::map<int, std::map<int, Point2f> > corres;
+	
+	std::vector<MarkerPair> first_tmp_markers;
+	std::vector<MarkerPair> second_tmp_markers;
+	
+	
 
-    for (std::vector<MarkerPair>::iterator i = first_markers.begin(); i != first_markers.end(); i++) {
+    for (std::vector<MarkerPair>::iterator i = first_markers_.begin(); i != first_markers_.end(); i++) {
 
         // ball center
         Eigen::Vector3d a1(0, 0, 0);
@@ -235,11 +244,13 @@ void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondance
         Eigen::Vector3d a3(i->euclid_second.x, i->euclid_second.y, i->euclid_second.z);
 
 
-        int tmpMatches = 0;
-        std::map<int, std::map<int, Point2f> > tmpCorrespondances;
 
-        for (std::vector<MarkerPair>::iterator j = second_markers.begin(); j != second_markers.end(); j++) {
-        
+        for (std::vector<MarkerPair>::iterator j = second_markers_.begin(); j != second_markers_.end(); j++) {
+
+            int tmpMatches = 0;
+
+            std::map<int, std::map<int, Point2f> > tmpCorrespondances;
+
             Eigen::Vector3d b1(0, 0, 0);
             Eigen::Vector3d b2(j->euclid_first.x, j->euclid_first.y, j->euclid_first.z);
             Eigen::Vector3d b3(j->euclid_second.x, j->euclid_second.y, j->euclid_second.z);
@@ -256,17 +267,17 @@ void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondance
 
             Eigen::Matrix3d transf = Eigen::umeyama(start, end).topLeftCorner(3, 3);
 
-            std::cout << transf << std::endl;
-
-
 
             std::set<MarkerPair> treated;
+			
+			std::vector<MarkerPair> first_markers(first_markers_);
+			std::vector<MarkerPair> second_markers(second_markers_);
 
             for (std::vector<MarkerPair>::iterator k = first_markers.begin(); k != first_markers.end(); k++) {
 
                 for (std::vector<MarkerPair>::iterator l = second_markers.begin(); l != second_markers.end(); l++) {
 
-                        if (!treated.count(*l) && !treated.count(*k)) {
+                    if (!treated.count(*l) && !treated.count(*k) && (((k != i) && (l != j)) || ((k == i) && (l == j)))) {
                         Eigen::Vector3d c1(k->euclid_first.x, k->euclid_first.y, k->euclid_first.z);
                         Eigen::Vector3d c2(k->euclid_second.x, k->euclid_second.y, k->euclid_second.z);
 
@@ -286,13 +297,12 @@ void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondance
 
 
                         if (dist1 > dist2) {
-                            double curError = dist2 + dist3;
-
+                            curError = dist2 + dist3;
                         }
 
                         if (curError < MAX_ERROR) {
 
-                            std::cout << "taking point, error : " << curError << std::endl;
+                            std::cout << "taking point " << l->first << ", " << l->second << " | " << k->first << ", " << k->second << " error : " << curError << std::endl;
 
                             tmpMatches++;
 
@@ -311,9 +321,9 @@ void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondance
                                     k->first_id = ransac_id;
                                     l->second_id = ransac_id;
                                     ransac_id++;
-                                    tmpCorrespondances[k->first_id][pass] = Point2f(k->first.x, k->first.y);
+                                    tmpCorrespondances[k->first_id][pass] = k->first;
                                 }
-                                tmpCorrespondances[k->first_id][pass + 1] = Point2f(l->second.x, l->second.y);
+                                tmpCorrespondances[k->first_id][pass + 1] = l->second;
 
 
                                 if (k->second_id != 0) {
@@ -323,9 +333,9 @@ void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondance
                                     k->second_id = ransac_id;
                                     l->first_id = ransac_id;
                                     ransac_id++;
-                                    tmpCorrespondances[k->second_id][pass] = Point2f(k->second.x, k->second.y);
+                                    tmpCorrespondances[k->second_id][pass] = k->second;
                                 }
-                                tmpCorrespondances[k->second_id][pass + 1] = Point2f(l->first.x, l->first.y);
+                                tmpCorrespondances[k->second_id][pass + 1] = l->first;
 
                             }
                             // c1 + c3 & c2 + c4
@@ -338,9 +348,9 @@ void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondance
                                     k->first_id = ransac_id;
                                     l->first_id = ransac_id;
                                     ransac_id++;
-                                    tmpCorrespondances[k->first_id][pass] = Point2f(k->first.x, k->first.y);
+                                    tmpCorrespondances[k->first_id][pass] = k->first;
                                 }
-                                tmpCorrespondances[k->first_id][pass + 1] = Point2f(l->first.x, l->first.y);
+                                tmpCorrespondances[k->first_id][pass + 1] = l->first;
 
 
                                 if (k->second_id != 0) {
@@ -350,36 +360,47 @@ void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondance
                                     k->second_id = ransac_id;
                                     l->second_id = ransac_id;
                                     ransac_id++;
-                                    tmpCorrespondances[k->second_id][pass] = Point2f(k->second.x, k->second.y);
+                                    tmpCorrespondances[k->second_id][pass] = k->second;
                                 }
-                                tmpCorrespondances[k->second_id][pass + 1] = Point2f(l->second.x, l->second.y);
+                                tmpCorrespondances[k->second_id][pass + 1] = l->second;
 
                             }
                         }
                         else {
-                            std::cout << "discarding point, too much error " << curError << std::endl;
+                            //std::cout << "discarding point, too much error " << curError << std::endl;
                         }
                     }
                 }
 
             }
+
+            if (tmpMatches > max_matches) {
+
+				first_tmp_markers = first_markers;
+				second_tmp_markers = second_markers;
+                corres = tmpCorrespondances;
+                max_matches = tmpMatches;
+            }
         }
 
-        if (tmpMatches > max_matches) {
+    }
+	
+	first_markers_ = first_tmp_markers;
+	second_markers_ = second_tmp_markers;
 
-            for (std::map<int, std::map<int, Point2f> >::iterator m = tmpCorrespondances.begin(); m != tmpCorrespondances.end(); ++m) { 
+    for (std::map<int, std::map<int, Point2f> >::iterator m = corres.begin(); m != corres.end(); ++m) { 
 
-                for (std::map<int, Point2f>::iterator n = m->second.begin(); n != m->second.end(); ++n) { 
+        for (std::map<int, Point2f>::iterator n = m->second.begin(); n != m->second.end(); ++n) { 
 
-                    correspondances[m->first][n->first] = n->second;
-                    std::cout << "copying " << std::endl;
-                }
-            }
-            max_matches = tmpMatches;
+            correspondances[m->first][n->first] = n->second;
+
+            std::cout << "corres " << m->first << std::endl;
+            std::cout << "camera : " << n->first << "point: " << n->second << std::endl;
         }
     }
+        
 
-    //std::cout << "found " << tmpCorrespondances.size() << " correspondances for camera " << pass << " and " << (pass+1) << std::endl;
+    std::cout << "found " << correspondances.size() << " correspondances for camera " << pass << " and " << (pass+1) << std::endl;
 
 }
 
@@ -397,7 +418,7 @@ std::vector<MarkerPair> treatImage(char* file) {
     }
 
 
-    resize(image, image, Size(), 0.3, 0.3);
+    //resize(image, image, Size(), 0.3, 0.3);
 
     // Go into HSV space
     Mat hsv;
@@ -405,13 +426,17 @@ std::vector<MarkerPair> treatImage(char* file) {
 
     Mat reddot;
     // select red
-    cvNamedWindow("Red dot", CV_WINDOW_AUTOSIZE);
+    cvNamedWindow("Red dot", CV_WINDOW_NORMAL);
 
     cvCreateTrackbar("Red threshold", "Red dot", &red_threshold, 255, NULL);
+    cvCreateTrackbar("Red threshold up", "Red dot", &red_threshold_up, 255, NULL);
 
     while (cvWaitKey(50) != ' ') {
 
-        inRange(hsv, Scalar(0, red_threshold, red_threshold), Scalar(7, 255, 255), reddot);
+        Mat other;
+        inRange(hsv, Scalar(0, red_threshold, red_threshold), Scalar(10, 255, 255), reddot);
+        inRange(hsv, Scalar(170, red_threshold_up, red_threshold_up), Scalar(180, 255, 255), other);
+        reddot = reddot | other;
         Mat copy = reddot.clone();
         imshow("Red dot", copy);
     }
@@ -464,7 +489,7 @@ std::vector<MarkerPair> treatImage(char* file) {
     //good_pairs = std::vector<MarkerPair>();
 
 
-    cvNamedWindow("good_pairs", CV_WINDOW_AUTOSIZE);
+    cvNamedWindow("good_pairs", CV_WINDOW_NORMAL);
     setMouseCallback("good_pairs", onMouse, 0);
 
     cvCreateTrackbar("Max deviation", "good_pairs", &MEAN_DEVIATION_DISTANCE_THRESH, 100, NULL);
@@ -513,7 +538,12 @@ std::vector<MarkerPair> treatImage(char* file) {
         ballcenter = Vec3f(0, 0, 0);
 
 
+        int morph_elem = 0;
+        int morph_size = 10;
+        Mat element = getStructuringElement( morph_elem, Size( 2*morph_size + 1, 2*morph_size+1 ), Point( morph_size, morph_size ) );
         Mat copy = image.clone();
+        //morphologyEx(src_gray, src_gray, MORPH_CLOSE, element);
+        //imshow("finding ball", src_gray);
         HoughCircles(src_gray, circles_ball, CV_HOUGH_GRADIENT, (circle_resolution != 0 ? circle_resolution : 1), src_gray.rows/8, 200, 100, min_radius, max_radius);
 
 
@@ -604,14 +634,33 @@ int main(int argc, char** argv)
     std::map<int, std::vector<string> > pointsdat;
     std::map<int, std::vector<string> > idmat;
 
+    RNG rng(12345);
+
+    std::vector<Mat> testoutput = std::vector<Mat>(argc - 1); 
+
+    std::ofstream file;
+    file.open("Res.dat");
+
+    for (int i = 0; i < argc - 1; i++) {
+        testoutput[i] = imread(argv[i + 1], 1);
+        //resize(testoutput[i], testoutput[i], Size(), 0.3, 0.3);
+        file << testoutput[i].cols << " " << testoutput[i].rows << std::endl;
+    }
+
+    file.close();
+
     for (std::map<int, std::map<int, Point2f> >::iterator i = points.begin(); i != points.end(); i++) {
 
+        Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255));
         for (int k = 0; k < argc - 1; k++) {
             if (i->second.count(k) == 1) {
                 idmat[k].push_back("1");
                 pointsdat[k*3].push_back(stringify(i->second[k].x));
                 pointsdat[k*3+1].push_back(stringify(i->second[k].y));
                 pointsdat[k*3+2].push_back("1");
+                circle(testoutput[k], i->second[k], 3, color, -1, 8, 0);
+
+
             }
             else {
                 idmat[k].push_back("0");
@@ -623,8 +672,12 @@ int main(int argc, char** argv)
         }
     }
 
+    for (int i = 0; i < argc - 1; i++) {
+        std::stringstream s;
+        s << "camera " << i;
+        imshow(s.str(), testoutput[i]);
+    }
 
-    std::ofstream file;
     file.open("points.dat");
 
     for (std::map<int, std::vector<string> >::iterator i = pointsdat.begin(); i != pointsdat.end(); i++) {
@@ -647,6 +700,10 @@ int main(int argc, char** argv)
     }
     file.close();
 
+
+    while (true) {
+        cvWaitKey(500);
+    }
 
     return 0;
 }
