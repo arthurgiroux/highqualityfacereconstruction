@@ -147,8 +147,12 @@ public:
             inputCapture >> view0;
             view0.copyTo(result);
         }
-        else if( atImageList < (int)imageList.size() )
-            result = imread(imageList[atImageList++], IMREAD_COLOR);
+        else if( atImageList < (int)imageList.size() ) {
+            cout << "reading image " << imageList[atImageList] << endl;
+            result = imread(imageList[atImageList], IMREAD_COLOR);
+            atImageList++;
+        }
+
 
         return result;
     }
@@ -300,6 +304,7 @@ int main(int argc, char* argv[])
                 if( mode == CAPTURING &&  // For camera only take new samples after delay time
                     (!s.inputCapture.isOpened() || clock() - prevTimestamp > s.delay*1e-3*CLOCKS_PER_SEC) )
                 {
+                    cout << "taking image into account " << endl;
                     imagePoints.push_back(pointBuf);
                     prevTimestamp = clock();
                     blinkOutput = s.inputCapture.isOpened();

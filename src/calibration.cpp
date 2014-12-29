@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <cmath>
+#include <set>
 #include <opencv2/opencv.hpp>
 #include <Eigen/Geometry> 
 
@@ -12,8 +13,8 @@ using namespace cv;
 int ransac_id = 1;
 int red_threshold = 90;
 int red_threshold_up = 50;
-int circle_resolution = 1;
-int min_radius = 100;
+int circle_resolution = 2;
+int min_radius = 400;
 int max_radius = 0;
 
 
@@ -122,6 +123,29 @@ void onMouse(int event, int x, int y, int flag, void* param)
                 break;
             }
         }
+    }
+}
+
+
+Point3f manual_point(0, 0, 0);
+
+void onMouseRadius(int event, int x, int y, int flag, void* param)
+{
+
+    if (event == EVENT_LBUTTONDOWN) {
+
+        if (first) {
+            tmpPoint = Point2f(x, y);
+            first = false;
+        }
+        else {
+            manual_point = Point3f(manual_point.x, manual_point.y, distanceBetweenPoints(Point2f(x, y), tmpPoint) / 2.0);
+            first = true;
+        }
+    }
+
+    else if (event == EVENT_RBUTTONDOWN) {
+        manual_point = Point3f(x, y, manual_point.z);
     }
 }
 
@@ -430,13 +454,18 @@ std::vector<MarkerPair> treatImage(char* file) {
 
     cvCreateTrackbar("Red threshold", "Red dot", &red_threshold, 255, NULL);
     cvCreateTrackbar("Red threshold up", "Red dot", &red_threshold_up, 255, NULL);
-
-    while (cvWaitKey(50) != ' ') {
+    while (cvWaitKey(500) != ' ') {
 
         Mat other;
         inRange(hsv, Scalar(0, red_threshold, red_threshold), Scalar(10, 255, 255), reddot);
         inRange(hsv, Scalar(170, red_threshold_up, red_threshold_up), Scalar(180, 255, 255), other);
         reddot = reddot | other;
+        int morph_elem = 0;
+        int morph_size = 5;
+        Mat element = getStructuringElement( morph_elem, Size( 2*morph_size + 1, 2*morph_size+1 ), Point( morph_size, morph_size ) );
+
+        morphologyEx(reddot, reddot, MORPH_OPEN, element);
+        blur(reddot, reddot, Size(5, 5));
         Mat copy = reddot.clone();
         imshow("Red dot", copy);
     }
@@ -476,49 +505,6 @@ std::vector<MarkerPair> treatImage(char* file) {
         }
     }
 
-    /// Draw contours
-    for( int i = 0; i< corners.size(); i++)
-     {
-       Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
-       circle(image, corners[i], 3, color, -1, 8, 0 );
-       std::cout << corners[i] << std::endl;
-     }
-
-
-    // Let's match the points together
-    //good_pairs = std::vector<MarkerPair>();
-
-
-    cvNamedWindow("good_pairs", CV_WINDOW_NORMAL);
-    setMouseCallback("good_pairs", onMouse, 0);
-
-    cvCreateTrackbar("Max deviation", "good_pairs", &MEAN_DEVIATION_DISTANCE_THRESH, 100, NULL);
-
-    int latest_mean_dev = 0;
-    good_pairs = std::vector<MarkerPair>();
-    while (cvWaitKey(50) != ' ') {
-        if (latest_mean_dev != MEAN_DEVIATION_DISTANCE_THRESH) {
-            good_pairs = matchPoints(corners);
-            latest_mean_dev = MEAN_DEVIATION_DISTANCE_THRESH;
-        }
-
-        std::cout << "# pairs " << good_pairs.size() << std::endl;
-
-
-        Mat copy = image.clone();
-        for (size_t idx = 0; idx < good_pairs.size(); idx++) {
-            std::cout << " pair : " <<  good_pairs.at(idx).first << ", " << good_pairs.at(idx).second << std::endl;
-            line(copy, good_pairs.at(idx).first, good_pairs.at(idx).second, 255);
-        }
-
-        imshow("good_pairs", copy);
-    }
-
-    destroyWindow("good_pairs");
-
-    // Setting up the euclidian coordinate system with the origin at the center of the ball
-
-
     // finding the center of the ball
     vector<Vec3f> circles_ball;
 
@@ -533,37 +519,47 @@ std::vector<MarkerPair> treatImage(char* file) {
 
     cvCreateTrackbar("Maximum radius", "centers", &max_radius, 500, NULL);
 
-    while (cvWaitKey(50) != ' ') {
+    first = false;
+
+    setMouseCallback("centers", onMouseRadius, 0);
+
+
+    while (cvWaitKey(2000) != ' ') {
 
         ballcenter = Vec3f(0, 0, 0);
-
-
-        int morph_elem = 0;
-        int morph_size = 10;
-        Mat element = getStructuringElement( morph_elem, Size( 2*morph_size + 1, 2*morph_size+1 ), Point( morph_size, morph_size ) );
         Mat copy = image.clone();
-        //morphologyEx(src_gray, src_gray, MORPH_CLOSE, element);
-        //imshow("finding ball", src_gray);
-        HoughCircles(src_gray, circles_ball, CV_HOUGH_GRADIENT, (circle_resolution != 0 ? circle_resolution : 1), src_gray.rows/8, 200, 100, min_radius, max_radius);
+
+
+        if (manual_point.x != 0 && manual_point.y != 0 && manual_point.z != 0) {
+            ballcenter = manual_point;
+        }
+
+        else {
+
+            //morphologyEx(src_gray, src_gray, MORPH_CLOSE, element);
+            //imshow("finding ball", src_gray);
+
+            HoughCircles(src_gray, circles_ball, CV_HOUGH_GRADIENT, (circle_resolution != 0 ? circle_resolution : 1), src_gray.rows/8, 200, 100, min_radius, max_radius);
 
 
 
-        // taking biggest radius
+            // taking biggest radius
 
-        for (int i = 0; i < circles_ball.size(); i++) {
-            if (circles_ball[i][2] > ballcenter[2]) {
-                ballcenter = circles_ball[i];
-                std::cout << "new biggest ball " << ballcenter[2] << std::endl;
+            for (int i = 0; i < circles_ball.size(); i++) {
+                if (circles_ball[i][2] > ballcenter[2]) {
+                    ballcenter = circles_ball[i];
+                    std::cout << "new biggest ball " << ballcenter[2] << std::endl;
+                }
+
+
+                Point center(cvRound(circles_ball[i][0]), cvRound(circles_ball[i][1]));
+                float radius = cvRound(circles_ball[i][2]);
+                // circle center
+                circle(copy, center, 3, Scalar(0,255,0), -1, 8, 0);
+                // circle outline
+                circle(copy, center, radius, Scalar(0,0,255), 3, 8, 0);
+
             }
-
-
-            Point center(cvRound(circles_ball[i][0]), cvRound(circles_ball[i][1]));
-            float radius = cvRound(circles_ball[i][2]);
-            // circle center
-            circle(copy, center, 3, Scalar(0,255,0), -1, 8, 0);
-            // circle outline
-            circle(copy, center, radius, Scalar(0,0,255), 3, 8, 0);
-
         }
 
         Point center(cvRound(ballcenter[0]), cvRound(ballcenter[1]));
@@ -579,10 +575,10 @@ std::vector<MarkerPair> treatImage(char* file) {
         std::cout << "found " << circles_ball.size() << " balls " << std::endl;
 
     }
-    if (circles_ball.size() == 0) {
-        std::cerr << "Could'nt find the ball, aborting" << std::endl;
-        exit(1);
-    }
+    // if (circles_ball.size() == 0) {
+    //     std::cerr << "Could'nt find the ball, aborting" << std::endl;
+    //     exit(1);
+    // }
 
     destroyWindow("centers");
 
@@ -597,6 +593,61 @@ std::vector<MarkerPair> treatImage(char* file) {
     Point unit_y = center - Point(0, radius);
 
     line(image, center, unit_y, 255);
+
+    // Let's match the points together
+    //good_pairs = std::vector<MarkerPair>();
+
+    std::vector<Point2f> cornersInBall = std::vector<Point2f>();
+    for (int i = 0; i < corners.size(); ++i) {
+        if ((corners[i].x > (center.x - radius)) && (corners[i].x < (center.x + radius)) &&
+            (corners[i].y > (center.y - radius)) && (corners[i].y < (center.y + radius))) {
+            cornersInBall.push_back(corners[i]);
+        }
+    }
+
+    corners = cornersInBall;
+
+    /// Draw contours
+    for( int i = 0; i< corners.size(); i++)
+     {
+       Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+       circle(image, corners[i], 20, color, -1, 8, 0 );
+       std::cout << corners[i] << std::endl;
+     }
+
+
+
+    cvNamedWindow("good_pairs", CV_WINDOW_NORMAL);
+    setMouseCallback("good_pairs", onMouse, 0);
+
+    cvCreateTrackbar("Max deviation", "good_pairs", &MEAN_DEVIATION_DISTANCE_THRESH, 100, NULL);
+
+    int latest_mean_dev = 0;
+    good_pairs = std::vector<MarkerPair>();
+    while (cvWaitKey(500) != ' ') {
+        if (latest_mean_dev != MEAN_DEVIATION_DISTANCE_THRESH) {
+            good_pairs = matchPoints(corners);
+            latest_mean_dev = MEAN_DEVIATION_DISTANCE_THRESH;
+        }
+
+        std::cout << "# pairs " << good_pairs.size() << std::endl;
+
+
+        Mat copy = image.clone();
+        for (size_t idx = 0; idx < good_pairs.size(); idx++) {
+            std::cout << " pair : " <<  good_pairs.at(idx).first << ", " << good_pairs.at(idx).second << std::endl;
+            line(copy, good_pairs.at(idx).first, good_pairs.at(idx).second, 255, 20);
+        }
+
+        imshow("good_pairs", copy);
+    }
+
+    destroyWindow("good_pairs");
+
+    // Setting up the euclidian coordinate system with the origin at the center of the ball
+
+
+
 
     std::vector<MarkerPair> markers_euclidians = euclidianProject(good_pairs, center, radius);
 
@@ -658,7 +709,7 @@ int main(int argc, char** argv)
                 pointsdat[k*3].push_back(stringify(i->second[k].x));
                 pointsdat[k*3+1].push_back(stringify(i->second[k].y));
                 pointsdat[k*3+2].push_back("1");
-                circle(testoutput[k], i->second[k], 3, color, -1, 8, 0);
+                circle(testoutput[k], i->second[k], 20, color, -1, 8, 0);
 
 
             }
