@@ -3,6 +3,7 @@
 #include <sstream>
 #include <time.h>
 #include <stdio.h>
+#include <iomanip>
 
 #include <opencv2/opencv.hpp>
 
@@ -12,6 +13,7 @@ using namespace std;
 std::string stringify(float x)
  {
    std::ostringstream o;
+   o << scientific << setprecision(9);
    if (!(o << x))
      return "";
    return o.str();
@@ -23,6 +25,9 @@ int main(int argc, char* argv[])
     std::map<int, std::vector<string> > pointsdat;
     std::map<int, std::vector<string> > idmat;
 
+
+    std::ofstream file;
+    file.open("Res.dat");
 
     for (int cam = 0; cam < argc - 1; cam++) {
         const string inputSettingsFile = argc > cam ? argv[cam+1] : "default.xml";
@@ -37,11 +42,15 @@ int main(int argc, char* argv[])
         int board_Width;
         int board_Height;
         int board_Size;
+        int image_Width;
+        int image_Height;
         Mat image_points;
         Mat extrinsics;
         fs["nrOfFrames"] >> nrOfFrames;
         fs["board_Width"] >> board_Width;
-        fs["board_Height"] >> board_Height; 
+        fs["board_Height"] >> board_Height;
+        fs["image_Width"] >> image_Width;
+        fs["image_Height"] >> image_Height; 
         fs["Image_points"] >> image_points;
 
 
@@ -62,17 +71,12 @@ int main(int argc, char* argv[])
                 idmat[cam].push_back("1");
             }
         }
+
+
+        file << image_Width << " " << image_Height << std::endl;
     }
 
-
-    std::ofstream file;
-    // file.open("Res.dat");
-
-    // for (int i = 1; i < argc; i++) {
-    //     file << "5472 3648" << std::endl;
-    // }
-
-    // file.close();
+    file.close();
 
     file.open("points.dat");
 

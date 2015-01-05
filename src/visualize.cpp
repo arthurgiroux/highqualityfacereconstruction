@@ -11,10 +11,10 @@ using namespace cv;
 using namespace std;
 
 void writeIntrinsic(Mat intrinsic, ofstream &outputfile) {
-	outputfile << "<fx>" << intrinsic.at<double>(0, 0) << "</fx>"
-	<< "<fy>" << intrinsic.at<double>(1, 1) << "</fy>"
-	<< "<cx>" << intrinsic.at<double>(0, 2) << "</cx>"
-	<< "<cy>" << intrinsic.at<double>(1, 2) << "</cy>";
+	outputfile << "<fx>" << intrinsic.at<double>(0, 0) << "</fx>" << endl
+	<< "<fy>" << intrinsic.at<double>(1, 1) << "</fy>" << endl
+	<< "<cx>" << intrinsic.at<double>(0, 2) << "</cx>" << endl
+	<< "<cy>" << intrinsic.at<double>(1, 2) << "</cy>" << endl;
 }
 
 void writeExtrinsic(Mat extrinsic, ofstream &outputfile) {
@@ -22,8 +22,10 @@ void writeExtrinsic(Mat extrinsic, ofstream &outputfile) {
 	for (int i = 0; i < extrinsic.rows; ++i) {
 		for (int j = 0; j < extrinsic.cols; ++j) {
 			outputfile << " " << extrinsic.at<double>(i, j);
-		}	
+		}
 	}
+
+    outputfile << endl;
 }
 
 int main(int argc, char **argv)
@@ -46,6 +48,7 @@ int main(int argc, char **argv)
     	if (file.is_open()) {
     		Mat proj(3, 4, CV_64F);
     		string line;
+    		// skip headers
     		for (int j = 0; j < 8; j++) {
     			getline(file, line);
     			if (j >= 5) {
@@ -80,11 +83,15 @@ int main(int argc, char **argv)
 
         decomposeProjectionMatrix(projs[i], K, R, t);
 
-		Mat transf = (Mat_<float>(3, 3) << 1, 0, 0, 0, 1, 0, 0, 0, -1);
-		transf.convertTo(transf, CV_64FC1);
+		Mat transf = (Mat_<double>(3, 3) << 1, 0, 0, 0, 1, 0, 0, 0, -1);
+		//transf.convertTo(transf, CV_64FC1);
 
-		//R =  transf * R;
-		//K = K * transf;
+		std::cout << K.at<double>(2, 2) << std::endl;
+		if (K.at<double>(2, 2) < 0) {
+			std::cout << "reversing R " << std::endl << std::endl << std::endl;
+			//K = K * transf;
+			//R = transf * R * transf;
+		}
 
 		cv::Matx33d RR = R.clone();
 

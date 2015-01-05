@@ -31,15 +31,16 @@ int main(int argc, char* argv[])
     int board_Width;
     int board_Height;
     int board_Size;
+    int image_Width;
+    int image_Height;
     Mat image_points;
     Mat extrinsics;
     fs["nrOfFrames"] >> nrOfFrames;
     fs["board_Width"] >> board_Width;
     fs["board_Height"] >> board_Height; 
     fs["Image_points"] >> image_points;
-
-
-    nrOfFrames = 4;
+    fs["image_Width"] >> image_Width;
+    fs["image_Height"] >> image_Height; 
 
     board_Size = board_Width * board_Height;
     fs.release();
@@ -66,7 +67,7 @@ int main(int argc, char* argv[])
     file.open("Res.dat");
 
     for (int i = 0; i < nrOfFrames; i++) {
-        file << "5472 3648" << std::endl;
+        file << image_Width << " " << image_Height << std::endl;
     }
 
     file.close();

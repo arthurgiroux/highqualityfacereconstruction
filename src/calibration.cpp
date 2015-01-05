@@ -2,7 +2,9 @@
 #include <fstream>
 #include <cmath>
 #include <set>
+#include <map>
 #include <opencv2/opencv.hpp>
+#include <opencv2/highgui.hpp>
 #include <Eigen/Geometry> 
 
 
@@ -20,7 +22,7 @@ int max_radius = 0;
 
 
 int MEAN_DEVIATION_DISTANCE_THRESH = 13;
-#define MAX_ERROR 50
+int MAX_ERROR = 50;
 
 // structure that represents a fiducial
 struct MarkerPair
@@ -248,7 +250,7 @@ std::vector<MarkerPair> euclidianProject(std::vector<MarkerPair> good_pairs, Poi
 
 // RANSAC 
 
-void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondances, int pass, std::vector<MarkerPair> &first_markers_, std::vector<MarkerPair> &second_markers_) {
+void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondances, int pass, std::vector<MarkerPair> &first_markers_, std::vector<MarkerPair> &second_markers_, int reverse = 1) {
 
     // Let's take a point from the first markers
 
@@ -347,7 +349,7 @@ void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondance
                                     ransac_id++;
                                     tmpCorrespondances[k->first_id][pass] = k->first;
                                 }
-                                tmpCorrespondances[k->first_id][pass + 1] = l->second;
+                                tmpCorrespondances[k->first_id][pass + reverse] = l->second;
 
 
                                 if (k->second_id != 0) {
@@ -359,7 +361,7 @@ void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondance
                                     ransac_id++;
                                     tmpCorrespondances[k->second_id][pass] = k->second;
                                 }
-                                tmpCorrespondances[k->second_id][pass + 1] = l->first;
+                                tmpCorrespondances[k->second_id][pass + reverse] = l->first;
 
                             }
                             // c1 + c3 & c2 + c4
@@ -374,7 +376,7 @@ void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondance
                                     ransac_id++;
                                     tmpCorrespondances[k->first_id][pass] = k->first;
                                 }
-                                tmpCorrespondances[k->first_id][pass + 1] = l->first;
+                                tmpCorrespondances[k->first_id][pass + reverse] = l->first;
 
 
                                 if (k->second_id != 0) {
@@ -386,7 +388,7 @@ void RANSACCorespondances(std::map<int, std::map<int, Point2f> > &correspondance
                                     ransac_id++;
                                     tmpCorrespondances[k->second_id][pass] = k->second;
                                 }
-                                tmpCorrespondances[k->second_id][pass + 1] = l->second;
+                                tmpCorrespondances[k->second_id][pass + reverse] = l->second;
 
                             }
                         }
@@ -446,19 +448,19 @@ std::vector<MarkerPair> treatImage(char* file) {
 
     // Go into HSV space
     Mat hsv;
-    cvtColor(image, hsv, CV_BGR2HSV);
+    cvtColor(image, hsv, COLOR_BGR2HSV);
 
     Mat reddot;
     // select red
-    cvNamedWindow("Red dot", CV_WINDOW_NORMAL);
+    namedWindow("Red dot", WINDOW_NORMAL);
 
-    cvCreateTrackbar("Red threshold", "Red dot", &red_threshold, 255, NULL);
-    cvCreateTrackbar("Red threshold up", "Red dot", &red_threshold_up, 255, NULL);
-    while (cvWaitKey(500) != ' ') {
+    createTrackbar("Red threshold", "Red dot", &red_threshold, 255, NULL);
+    createTrackbar("Red threshold up", "Red dot", &red_threshold_up, 255, NULL);
+    while (waitKey(500) != ' ') {
 
         Mat other;
-        inRange(hsv, Scalar(0, red_threshold, red_threshold), Scalar(10, 255, 255), reddot);
-        inRange(hsv, Scalar(170, red_threshold_up, red_threshold_up), Scalar(180, 255, 255), other);
+        inRange(hsv, Scalar(0, red_threshold, red_threshold), Scalar(15, 255, 255), reddot);
+        inRange(hsv, Scalar(160, red_threshold_up, red_threshold_up), Scalar(180, 255, 255), other);
         reddot = reddot | other;
         int morph_elem = 0;
         int morph_size = 5;
@@ -475,56 +477,48 @@ std::vector<MarkerPair> treatImage(char* file) {
     
 
     Mat src_gray;
-    cvtColor(image, src_gray, CV_BGR2GRAY);
+    cvtColor(image, src_gray, COLOR_BGR2GRAY);
 
     corners = std::vector<Point2f>();
 
     Mat canny_output;
-    vector<vector<Point> > contours;
-    vector<Vec4i> hierarchy;
+    std::vector<std::vector<Point> > contours;
+    std::vector<Vec4i> hierarchy;
     RNG rng(12345);
 
     /// Detect edges using canny
     Canny( reddot, canny_output, 100, 100*2, 3 );
     /// Find contours
-    findContours( reddot, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
+    findContours( reddot, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE, Point(0, 0) );
     
     /// Get the moments
-    vector<Moments> mu(contours.size());
     for (int i = 0; i < contours.size(); i++)
      {
-        mu[i] = moments(contours[i], false);
+        Moments mu = moments(contours[i], false);
+        corners.push_back(Point2f(mu.m10/mu.m00 , mu.m01/mu.m00));
     }
 
-    ///  Get the mass centers:
-    vector<Point2f> mc(contours.size());
-    for (int i = 0; i < contours.size(); i++)
-     {
-        if (mu[i].m00 != 0) {
-            corners.push_back(Point2f(mu[i].m10/mu[i].m00 , mu[i].m01/mu[i].m00));
-        }
-    }
 
     // finding the center of the ball
-    vector<Vec3f> circles_ball;
+    std::vector<Vec3f> circles_ball;
 
     Vec3f ballcenter;
 
 
-    cvNamedWindow("centers", CV_WINDOW_NORMAL);
+    namedWindow("centers", WINDOW_NORMAL);
 
-    cvCreateTrackbar("Circle resolution", "centers", &circle_resolution, 20, NULL);
+    createTrackbar("Circle resolution", "centers", &circle_resolution, 20, NULL);
 
-    cvCreateTrackbar("Minimum radius", "centers", &min_radius, 500, NULL);
+    createTrackbar("Minimum radius", "centers", &min_radius, 500, NULL);
 
-    cvCreateTrackbar("Maximum radius", "centers", &max_radius, 500, NULL);
+    createTrackbar("Maximum radius", "centers", &max_radius, 500, NULL);
 
     first = false;
 
     setMouseCallback("centers", onMouseRadius, 0);
 
 
-    while (cvWaitKey(2000) != ' ') {
+    while (waitKey(500) != ' ') {
 
         ballcenter = Vec3f(0, 0, 0);
         Mat copy = image.clone();
@@ -539,7 +533,7 @@ std::vector<MarkerPair> treatImage(char* file) {
             //morphologyEx(src_gray, src_gray, MORPH_CLOSE, element);
             //imshow("finding ball", src_gray);
 
-            HoughCircles(src_gray, circles_ball, CV_HOUGH_GRADIENT, (circle_resolution != 0 ? circle_resolution : 1), src_gray.rows/8, 200, 100, min_radius, max_radius);
+            //HoughCircles(src_gray, circles_ball, HOUGH_GRADIENT, (circle_resolution != 0 ? circle_resolution : 1), src_gray.rows/8, 200, 100, min_radius, max_radius);
 
 
 
@@ -589,11 +583,6 @@ std::vector<MarkerPair> treatImage(char* file) {
     // circle outline
     circle(image, center, radius, Scalar(0,0,255), 3, 8, 0);
 
-
-    Point unit_y = center - Point(0, radius);
-
-    line(image, center, unit_y, 255);
-
     // Let's match the points together
     //good_pairs = std::vector<MarkerPair>();
 
@@ -617,14 +606,14 @@ std::vector<MarkerPair> treatImage(char* file) {
 
 
 
-    cvNamedWindow("good_pairs", CV_WINDOW_NORMAL);
+    namedWindow("good_pairs", WINDOW_NORMAL);
     setMouseCallback("good_pairs", onMouse, 0);
 
-    cvCreateTrackbar("Max deviation", "good_pairs", &MEAN_DEVIATION_DISTANCE_THRESH, 100, NULL);
+    createTrackbar("Max deviation", "good_pairs", &MEAN_DEVIATION_DISTANCE_THRESH, 100, NULL);
 
     int latest_mean_dev = 0;
     good_pairs = std::vector<MarkerPair>();
-    while (cvWaitKey(500) != ' ') {
+    while (waitKey(500) != ' ') {
         if (latest_mean_dev != MEAN_DEVIATION_DISTANCE_THRESH) {
             good_pairs = matchPoints(corners);
             latest_mean_dev = MEAN_DEVIATION_DISTANCE_THRESH;
@@ -673,27 +662,64 @@ int main(int argc, char** argv)
     }
 
 
-    std::map<int, std::map<int, Point2f> > points;
-
-
-    for (int i = 0; i < argc - 2; i++) {
-        RANSACCorespondances(points, i, imageData[i], imageData[i+1]);
-    }
-
-    std::cout << "# of points : " << points.size() << std::endl;
-
-    std::map<int, std::vector<string> > pointsdat;
-    std::map<int, std::vector<string> > idmat;
-
-    RNG rng(12345);
+    namedWindow("panel");
+    createTrackbar("Ransac error", "panel", &MAX_ERROR, 500, NULL);
 
     std::vector<Mat> testoutput = std::vector<Mat>(argc - 1); 
+
+    for (int i = 0; i < argc - 1; i++) {
+        testoutput[i] = imread(argv[i + 1], 1);
+    }
+
+
+    std::map<int, std::map<int, Point2f> > points;
+
+    while (waitKey(2000) != ' ') {
+        RNG rng(12345);
+        points.clear();
+
+        for (int i = 0; i < argc - 2; i++) {
+            RANSACCorespondances(points, i, imageData[i], imageData[i+1]);
+        }
+
+        for (int i = argc - 2; i > 0; i--) {
+            RANSACCorespondances(points, i, imageData[i], imageData[i-1], -1);
+        }
+
+        std::vector<Mat> testoutput2 = std::vector<Mat>(argc - 1); 
+
+        for (int i = 0; i < argc - 1; i++) {
+            testoutput2[i] = testoutput[i].clone();
+        }
+
+
+        for (std::map<int, std::map<int, Point2f> >::iterator i = points.begin(); i != points.end(); i++) {
+
+            Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255));
+            for (int k = 0; k < argc - 1; k++) {
+                if (i->second.count(k) == 1) {
+                    circle(testoutput2[k], i->second[k], 20, color, -1, 8, 0);
+                }
+            }
+        }
+
+        for (int i = 0; i < argc - 1; i++) {
+            std::stringstream s;
+            s << "camera " << i;
+            namedWindow(s.str(), WINDOW_NORMAL);
+            imshow(s.str(), testoutput2[i]);
+        }
+
+        std::cout << "# of points : " << points.size() << std::endl;
+    }
+
+    std::map<int, std::vector<std::string> > pointsdat;
+    std::map<int, std::vector<std::string> > idmat;
 
     std::ofstream file;
     file.open("Res.dat");
 
     for (int i = 0; i < argc - 1; i++) {
-        testoutput[i] = imread(argv[i + 1], 1);
         //resize(testoutput[i], testoutput[i], Size(), 0.3, 0.3);
         file << testoutput[i].cols << " " << testoutput[i].rows << std::endl;
     }
@@ -702,14 +728,12 @@ int main(int argc, char** argv)
 
     for (std::map<int, std::map<int, Point2f> >::iterator i = points.begin(); i != points.end(); i++) {
 
-        Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255));
         for (int k = 0; k < argc - 1; k++) {
             if (i->second.count(k) == 1) {
                 idmat[k].push_back("1");
                 pointsdat[k*3].push_back(stringify(i->second[k].x));
                 pointsdat[k*3+1].push_back(stringify(i->second[k].y));
                 pointsdat[k*3+2].push_back("1");
-                circle(testoutput[k], i->second[k], 20, color, -1, 8, 0);
 
 
             }
@@ -723,16 +747,12 @@ int main(int argc, char** argv)
         }
     }
 
-    for (int i = 0; i < argc - 1; i++) {
-        std::stringstream s;
-        s << "camera " << i;
-        imshow(s.str(), testoutput[i]);
-    }
+
 
     file.open("points.dat");
 
-    for (std::map<int, std::vector<string> >::iterator i = pointsdat.begin(); i != pointsdat.end(); i++) {
-        for (std::vector<string>::iterator j = i->second.begin(); j != i->second.end(); j++) {
+    for (std::map<int, std::vector<std::string> >::iterator i = pointsdat.begin(); i != pointsdat.end(); i++) {
+        for (std::vector<std::string>::iterator j = i->second.begin(); j != i->second.end(); j++) {
             file << j->c_str() << " ";
         }
 
@@ -742,8 +762,8 @@ int main(int argc, char** argv)
 
     file.open("IdMat.dat");
 
-    for (std::map<int, std::vector<string> >::iterator i = idmat.begin(); i != idmat.end(); i++) {
-        for (std::vector<string>::iterator j = i->second.begin(); j != i->second.end(); j++) {
+    for (std::map<int, std::vector<std::string> >::iterator i = idmat.begin(); i != idmat.end(); i++) {
+        for (std::vector<std::string>::iterator j = i->second.begin(); j != i->second.end(); j++) {
             file << j->c_str() << " ";
         }
 
@@ -751,10 +771,7 @@ int main(int argc, char** argv)
     }
     file.close();
 
-
-    while (true) {
-        cvWaitKey(500);
-    }
+    waitKey(0);
 
     return 0;
 }
